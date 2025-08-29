@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "apache-airflow>=3.0.4",
+    "evidently>=0.7.14",
     "ipykernel>=6.30.1",
     "joblib>=1.5.2",
     "kaggle>=1.7.4.5",
