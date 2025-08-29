@@ -6,6 +6,8 @@ import mlflow.sklearn
 import pandas as pd
 import yaml
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 
@@ -20,12 +22,14 @@ def train_model(
     config_path: str = "config.yaml",
 ) -> str:
     """
-    Train the machine learning model with MLflow tracking.
+    Train a RandomForest pipeline and log model + metrics to MLflow.
     """
-    config = load_config(config_path)
 
+    # Load config
+    config = load_config(config_path)
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
 
+    # Set experiment
     try:
         experiment = mlflow.get_experiment_by_name(config["mlflow"]["experiment_name"])
         if experiment is None:
@@ -34,36 +38,59 @@ def train_model(
     except Exception as e:
         print(f"Could not set experiment: {e}")
 
+    # Load preprocessed data
+    train_data = pd.read_parquet(input_path)
+    preprocessor = joblib.load("data/processed/preprocessor.pkl")
+
+    X = train_data.drop(columns=[config["model"]["target_column"]])
+    y = train_data[config["model"]["target_column"]]
+
+    # Split for evaluation
+    test_size = config["model"].get("test_size", 0.2)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=config["model"]["random_state"]
+    )
+
+    # Initialize model
+    model = RandomForestClassifier(
+        n_estimators=config["model"]["n_estimators"],
+        max_depth=config["model"]["max_depth"],
+        random_state=config["model"]["random_state"],
+    )
+
+    # Build full pipeline
+    model_pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
+    model_pipeline.fit(X_train, y_train)
+
+    # Evaluate on test set
+    y_pred = model_pipeline.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+
+    # Log model + metrics to MLflow
     with mlflow.start_run():
-        mlflow.set_tag("model_type", "RandomForestClassifier")
-
-        train_data = pd.read_parquet(input_path)
-        preprocessor = joblib.load("data/processed/preprocessor.pkl")
-
-        X_train = train_data.drop(columns=["Is_Cancelled"])
-        y_train = train_data["Is_Cancelled"]
-
-        model = RandomForestClassifier(
-            n_estimators=config["model"]["n_estimators"],
-            max_depth=config["model"]["max_depth"],
-            random_state=config["model"]["random_state"],
+        mlflow.set_tag("model_type", "RandomForestPipeline")
+        mlflow.log_params(
+            {
+                "n_estimators": config["model"]["n_estimators"],
+                "max_depth": config["model"]["max_depth"],
+                "random_state": config["model"]["random_state"],
+                "test_size": test_size,
+            }
         )
 
-        mlflow.log_param("n_estimators", config["model"]["n_estimators"])
-        mlflow.log_param("max_depth", config["model"]["max_depth"])
-        mlflow.log_param("random_state", config["model"]["random_state"])
-        mlflow.log_param("test_size", config["model"]["test_size"])
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("f1_score", f1)
 
-        model_pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
+        mlflow.sklearn.log_model(model_pipeline, artifact_path="model")
 
-        model_pipeline.fit(X_train, y_train)
+    # Save locally as well
+    os.makedirs("models", exist_ok=True)
+    model_path = "models/trained_model.pkl"
+    joblib.dump(model_pipeline, model_path)
 
-        mlflow.sklearn.log_model(
-            sk_model=model_pipeline, artifact_path="model", registered_model_name=None
-        )
+    print(f"Model trained. Test Accuracy: {acc:.4f}, F1 Score: {f1:.4f}")
+    print(f"Local pipeline saved to: {model_path}")
+    print("MLflow run logged.")
 
-        os.makedirs("models", exist_ok=True)
-        model_path = "models/trained_model.pkl"
-        joblib.dump(model_pipeline, model_path)
-
-        return model_path
+    return model_path
