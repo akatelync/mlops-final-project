@@ -11,7 +11,7 @@ model:
   max_depth: 10
 
 mlflow:
-  tracking_uri: "http://localhost:5000"
+  tracking_uri: "http://127.0.0.1:5000"
   experiment_name: "uber-ride-prediction"
 
 thresholds:

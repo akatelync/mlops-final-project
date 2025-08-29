@@ -204,3 +204,6 @@ __marimo__/
 
 notebooks/
 documentation/
+models/
+mlartifacts/
+mlruns/

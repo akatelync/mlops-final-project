@@ -1,5 +1,8 @@
 import joblib
+import matplotlib.pyplot as plt
+import mlflow
 import pandas as pd
+import seaborn as sns
 import yaml
 from sklearn.metrics import (
     accuracy_score,
@@ -21,7 +24,7 @@ def validate_model(
     config_path: str = "config.yaml",
 ) -> dict:
     """
-    Validate the trained model performance.
+    Validate the trained model performance with MLflow logging.
 
     Args:
         model_path: Path to trained model
@@ -31,34 +34,50 @@ def validate_model(
     Returns:
         dict: Model evaluation metrics
     """
+    config = load_config(config_path)
 
-    model_pipeline = joblib.load(model_path)
-    test_data = pd.read_parquet(test_data_path)
+    mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
 
-    X_test = test_data.drop(columns=["Is_Cancelled"])
-    y_test = test_data["Is_Cancelled"]
+    with mlflow.start_run():
+        model_pipeline = joblib.load(model_path)
+        test_data = pd.read_parquet(test_data_path)
 
-    y_pred = model_pipeline.predict(X_test)
+        X_test = test_data.drop(columns=["Is_Cancelled"])
+        y_test = test_data["Is_Cancelled"]
 
-    metrics = {
-        "accuracy": accuracy_score(y_test, y_pred),
-        "f1_score": f1_score(y_test, y_pred),
-        "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
-        "classification_report": classification_report(
-            y_test, y_pred, output_dict=True
-        ),
-    }
+        y_pred = model_pipeline.predict(X_test)
 
-    print(f"Accuracy: {metrics['accuracy']:.4f}")
-    print(f"F1 Score: {metrics['f1_score']:.4f}")
-    print(f"Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
+        accuracy = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
 
-    return metrics
+        mlflow.log_metric("accuracy", accuracy)
+        mlflow.log_metric("f1_score", f1)
 
+        cm = confusion_matrix(y_test, y_pred)
 
-if __name__ == "__main__":
-    metrics = validate_model()
-    print("\nValidation metrics:")
-    for k, v in metrics.items():
-        if k not in ["confusion_matrix", "classification_report"]:
-            print(f"{k}: {v}")
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+        plt.title("Confusion Matrix")
+        plt.ylabel("True Label")
+        plt.xlabel("Predicted Label")
+
+        cm_plot_path = "confusion_matrix.png"
+        plt.savefig(cm_plot_path)
+        plt.close()
+
+        mlflow.log_artifact(cm_plot_path)
+
+        metrics = {
+            "accuracy": accuracy,
+            "f1_score": f1,
+            "confusion_matrix": cm.tolist(),
+            "classification_report": classification_report(
+                y_test, y_pred, output_dict=True
+            ),
+        }
+
+        print(f"Accuracy: {accuracy:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+        print(f"Confusion Matrix:\n{cm}")
+
+        return metrics
