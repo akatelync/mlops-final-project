@@ -1,11 +1,9 @@
 import os
 
 import joblib
-import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import pandas as pd
-import shap
 import yaml
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
@@ -23,18 +21,18 @@ def train_model(
 ) -> str:
     """
     Train the machine learning model with MLflow tracking.
-
-    Args:
-        input_path: Path to training data
-        config_path: Path to configuration file
-
-    Returns:
-        str: Path to the trained model
     """
     config = load_config(config_path)
 
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
-    mlflow.set_experiment(config["mlflow"]["experiment_name"])
+
+    try:
+        experiment = mlflow.get_experiment_by_name(config["mlflow"]["experiment_name"])
+        if experiment is None:
+            mlflow.create_experiment(config["mlflow"]["experiment_name"])
+        mlflow.set_experiment(config["mlflow"]["experiment_name"])
+    except Exception as e:
+        print(f"Could not set experiment: {e}")
 
     with mlflow.start_run():
         mlflow.set_tag("model_type", "RandomForestClassifier")
@@ -60,44 +58,12 @@ def train_model(
 
         model_pipeline.fit(X_train, y_train)
 
+        mlflow.sklearn.log_model(
+            sk_model=model_pipeline, artifact_path="model", registered_model_name=None
+        )
+
         os.makedirs("models", exist_ok=True)
         model_path = "models/trained_model.pkl"
         joblib.dump(model_pipeline, model_path)
 
-        mlflow.sklearn.log_model(model_pipeline, "model")
-
-        generate_shap_plot(model_pipeline, X_train.sample(100))
-
         return model_path
-
-
-def generate_shap_plot(model_pipeline, sample_data):
-    """Generate and log SHAP plot."""
-    try:
-        X_transformed = model_pipeline.named_steps["preprocessor"].transform(
-            sample_data
-        )
-
-        explainer = shap.TreeExplainer(model_pipeline.named_steps["model"])
-        shap_values = explainer.shap_values(X_transformed)
-
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]
-
-        plt.figure(figsize=(10, 6))
-        shap.summary_plot(shap_values, X_transformed, show=False, max_display=10)
-        plt.tight_layout()
-
-        results_dir = "results"
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
-
-        shap_plot_path = os.path.join(results_dir, "shap_summary.png")
-        plt.savefig(shap_plot_path)
-        plt.close()
-
-        mlflow.log_artifact(shap_plot_path)
-        os.remove(shap_plot_path)
-
-    except Exception as e:
-        print(f"Could not generate SHAP plot: {e}")

@@ -13,7 +13,12 @@ model:
 mlflow:
   tracking_uri: "http://127.0.0.1:5000"
   experiment_name: "uber-ride-prediction"
+  model_name: "uber-ride-prediction-model"
 
 thresholds:
   min_accuracy: 0.8
   min_f1_score: 0.7
+
+deployment:
+  api_endpoint: "http://localhost:8000"
+  health_check_timeout: 30

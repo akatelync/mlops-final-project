@@ -61,7 +61,7 @@ def validate_model(
         plt.ylabel("True Label")
         plt.xlabel("Predicted Label")
 
-        cm_plot_path = "confusion_matrix.png"
+        cm_plot_path = "results/confusion_matrix.png"
         plt.savefig(cm_plot_path)
         plt.close()
 
