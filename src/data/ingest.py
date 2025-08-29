@@ -41,3 +41,8 @@ def ingest_data(config_path: str = "config.yaml") -> str:
     df.to_parquet(processed_path, index=False)
 
     return processed_path
+
+
+if __name__ == "__main__":
+    output_path = ingest_data()
+    print(f"Data ingested and saved to: {output_path}")

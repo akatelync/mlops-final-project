@@ -106,3 +106,8 @@ def transform_data(
     joblib.dump(preprocessor, preprocessor_path)
 
     return train_path
+
+
+if __name__ == "__main__":
+    output_path = transform_data()
+    print(f"Transformed training data saved to: {output_path}")

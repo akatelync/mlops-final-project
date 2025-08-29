@@ -54,3 +54,11 @@ def validate_model(
     print(f"Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
 
     return metrics
+
+
+if __name__ == "__main__":
+    metrics = validate_model()
+    print("\nValidation metrics:")
+    for k, v in metrics.items():
+        if k not in ["confusion_matrix", "classification_report"]:
+            print(f"{k}: {v}")

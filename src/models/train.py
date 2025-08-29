@@ -50,3 +50,8 @@ def train_model(
     joblib.dump(model_pipeline, model_path)
 
     return model_path
+
+
+if __name__ == "__main__":
+    model_path = train_model()
+    print(f"Model trained and saved to: {model_path}")
