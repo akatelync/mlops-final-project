@@ -88,7 +88,7 @@ graph TB
 
 ## 📊 Dataset
 
-The project uses the **Uber Ride Analytics** dataset from Kaggle, containing ride booking information with features such as:
+The project uses the [**Uber Ride Analytics**](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard) dataset from Kaggle, containing ride booking information with features such as:
 
 - **Booking Details**: Date, Time, Booking ID, Customer ID
 - **Ride Information**: Vehicle Type, Pickup/Drop Locations, Distance
