@@ -6,9 +6,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 
-# -----------------------------
-# Load configuration
-# -----------------------------
 def load_config(config_path="config.yaml"):
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -22,9 +19,6 @@ MODEL_NAME = config["mlflow"]["model_name"]
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 
-# -----------------------------
-# Load Champion Model
-# -----------------------------
 def load_champion_model():
     """
     Load the production ('champion') model from MLflow Model Registry
@@ -42,9 +36,6 @@ model = load_champion_model()
 if model is None:
     raise RuntimeError("Champion model could not be loaded from MLflow.")
 
-# -----------------------------
-# FastAPI app
-# -----------------------------
 app = FastAPI(
     title="Uber Ride Cancellation Prediction",
     description="Serve ML model for predicting ride cancellations",
@@ -52,9 +43,6 @@ app = FastAPI(
 )
 
 
-# -----------------------------
-# Input Schema
-# -----------------------------
 class PredictRequest(BaseModel):
     # Replace these with your actual features
     BookingID: int = Field(..., example=12345)
@@ -65,9 +53,6 @@ class PredictRequest(BaseModel):
     # Add more features based on your model
 
 
-# -----------------------------
-# Endpoints
-# -----------------------------
 @app.get("/model")
 def get_model_info():
     """Return model metadata"""

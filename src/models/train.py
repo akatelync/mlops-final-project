@@ -25,11 +25,9 @@ def train_model(
     Train a RandomForest pipeline and log model + metrics to MLflow.
     """
 
-    # Load config
     config = load_config(config_path)
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
 
-    # Set experiment
     try:
         experiment = mlflow.get_experiment_by_name(config["mlflow"]["experiment_name"])
         if experiment is None:
@@ -38,7 +36,6 @@ def train_model(
     except Exception as e:
         print(f"Could not set experiment: {e}")
 
-    # Load preprocessed data
     train_data = pd.read_parquet(input_path)
     preprocessor = joblib.load("data/processed/preprocessor.pkl")
 
@@ -51,14 +48,12 @@ def train_model(
         X, y, test_size=test_size, random_state=config["model"]["random_state"]
     )
 
-    # Initialize model
     model = RandomForestClassifier(
         n_estimators=config["model"]["n_estimators"],
         max_depth=config["model"]["max_depth"],
         random_state=config["model"]["random_state"],
     )
 
-    # Build full pipeline
     model_pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
     model_pipeline.fit(X_train, y_train)
 
@@ -67,7 +62,6 @@ def train_model(
     acc = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
 
-    # Log model + metrics to MLflow
     with mlflow.start_run():
         mlflow.set_tag("model_type", "RandomForestPipeline")
         mlflow.log_params(
@@ -84,7 +78,6 @@ def train_model(
 
         mlflow.sklearn.log_model(model_pipeline, artifact_path="model")
 
-    # Save locally as well
     os.makedirs("models", exist_ok=True)
     model_path = "models/trained_model.pkl"
     joblib.dump(model_pipeline, model_path)

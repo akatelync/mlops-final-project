@@ -14,17 +14,77 @@ This project implements a complete MLOps solution that predicts whether an Uber 
 - **Model Registry**: Automated model promotion based on performance thresholds
 
 ## 🏗️ Architecture
+
+### Pipeline Flow
+
 ```mermaid
-graph TD
-    A[Data Sources<br>Kaggle] --> B[Airflow DAGs]
-    B --> C[MLflow Tracking]
-    B --> D[ML Pipeline<br>(Train/Val)]
-    B --> E[Drift Detection]
-    C --> F[Model Registry]
-    D --> G[FastAPI Serving]
-    F --> G
-    G --> H[Production Model]
+graph TB
+    %% Data Sources
+    DS[📊 Data Sources<br/>Kaggle Dataset] --> RAW[📁 Raw Data<br/>data/raw/dataset.csv]
+
+    %% Training Pipeline DAG
+    subgraph TP [🔄 Training Pipeline DAG - Daily]
+        RAW --> DI[📥 Data Ingestion<br/>src/data/ingest.py]
+        DI --> DT[🔧 Data Transformation<br/>src/features/transform.py]
+        DT --> MT[🤖 Model Training<br/>src/models/train.py]
+        MT --> MV[✅ Model Validation<br/>src/models/validate.py]
+    end
+
+    %% MLflow Integration
+    MV --> MLF[📈 MLflow Tracking<br/>Experiments & Metrics]
+    MLF --> MR[🏪 Model Registry<br/>Staging Models]
+
+    %% Deployment Pipeline DAG
+    subgraph DP [🚀 Deployment Pipeline DAG - On Demand]
+        MR --> MP[🎯 Model Promotion<br/>src/deployment/promote.py]
+        MP --> MD[📦 Model Deployment<br/>Production Stage]
+    end
+
+    %% Drift Detection Pipeline DAG
+    subgraph DD [🔍 Drift Detection DAG - Every 6 Hours]
+        SD[🎲 Simulate Drift<br/>src/data/simulate_drift.py]
+        SD --> DDT[📊 Detect Drift<br/>src/monitoring/generate_drift.py]
+        DDT --> AL[🚨 Alert on Drift<br/>Notifications]
+    end
+
+    %% Current Data Flow
+    RAW -.-> SD
+    DDT --> MLF
+
+    %% Model Serving
+    MD --> API[🌐 FastAPI Server<br/>src/serve/app.py]
+    API --> PRED[🔮 Predictions<br/>Real-time Inference]
+
+    %% External Access
+    USER[👤 Users] --> API
+    AIRFLOW[⚙️ Airflow UI<br/>localhost:8080] -.-> TP
+    AIRFLOW -.-> DP
+    AIRFLOW -.-> DD
+    MLFLOW_UI[📊 MLflow UI<br/>localhost:5000] -.-> MLF
+    API_DOCS[📚 API Docs<br/>localhost:8000/docs] -.-> API
+
+    %% Styling
+    classDef dagBox fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef mlflowBox fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef apiBox fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef dataBox fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+    class TP,DP,DD dagBox
+    class MLF,MR,MLFLOW_UI mlflowBox
+    class API,PRED,API_DOCS apiBox
+    class DS,RAW,SD dataBox
 ```
+
+### Component Overview
+
+| Component | Purpose | Technology | Schedule |
+|-----------|---------|------------|----------|
+| **Training Pipeline** | Data processing, model training & validation | Python, XGBoost, MLflow | Daily |
+| **Deployment Pipeline** | Model promotion & deployment | MLflow Model Registry | On-demand |
+| **Drift Detection** | Monitor data quality & model performance | Evidently AI | Every 6 hours |
+| **Model Serving** | Real-time predictions via REST API | FastAPI, Pydantic | Always running |
+| **Orchestration** | Workflow automation & scheduling | Apache Airflow | Always running |
+| **Experiment Tracking** | Model versioning & artifact management | MLflow | Always running |
 
 ## 📊 Dataset
 
