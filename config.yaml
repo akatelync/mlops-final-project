@@ -1,15 +1,25 @@
 data:
   raw_path: "data/raw/dataset.csv"
-  processed_path: "data/processed/train_data.parquet"   # <- updated
-  reference_path: "data/processed/train_data.parquet"   # <- same as processed
+  ingested_path: "data/processed/ingested_data.parquet"
+  processed_path: "data/processed/train_data.parquet"
+  reference_path: "data/processed/train_data.parquet"
   current_path: "data/current/drifted_data.parquet"
 
+features:
+  feature_cols:
+    - "avg_vtat"
+    - "timestamp"
+
+  numerical_cols:
+    - "avg_vtat"
+
+  datetime_cols:
+    - "timestamp"
+
 model:
-  target_column: "Is_Cancelled"
+  target_column: "is_cancelled"  # Note: lowercase as shown in your logs
   random_state: 10
   test_size: 0.2
-  n_estimators: 100
-  max_depth: 10
 
 mlflow:
   tracking_uri: "http://mlflow-server:5000"

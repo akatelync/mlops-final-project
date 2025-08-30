@@ -44,7 +44,8 @@ def run_data_transformation(**context):
 
     ti = context["ti"]
     ingested_path = ti.xcom_pull(task_ids="data_ingestion")
-    result = transform_data(ingested_path)
+
+    result = transform_data(input_path=ingested_path)
     return result
 
 
@@ -54,7 +55,13 @@ def run_model_training(**context):
 
     ti = context["ti"]
     train_path = ti.xcom_pull(task_ids="data_transformation")
-    result = train_model(train_path)
+
+    result = train_model(input_path=train_path)
+
+    # Extract run_id from the model URI for validation step
+    run_id = result.split("/")[1].split("/")[0]
+    ti.xcom_push(key="mlflow_run_id", value=run_id)
+
     return result
 
 
@@ -64,7 +71,9 @@ def run_model_validation(**context):
 
     ti = context["ti"]
     model_path = ti.xcom_pull(task_ids="model_training")
-    result = validate_model(model_path)
+    mlflow_run_id = ti.xcom_pull(key="mlflow_run_id", task_ids="model_training")
+
+    result = validate_model(model_path, mlflow_run_id=mlflow_run_id)
     return result
 
 

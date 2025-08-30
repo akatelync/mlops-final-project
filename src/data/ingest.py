@@ -23,21 +23,22 @@ def ingest_data(config_path: str = "/opt/airflow/config.yaml") -> str:
     Returns:
         str: Path to the processed data file for passing to next Airflow task
     """
-    config = load_config(config_path)
+    config = load_config()
     raw_path = config["data"]["raw_path"]
 
     df = pd.read_csv(raw_path)
 
-    df["DateTime"] = pd.to_datetime(df["Date"] + " " + df["Time"])
-    df.drop(["Date", "Time"], axis=1, inplace=True)
+    df.columns = df.columns.str.replace(" ", "_").str.lower()
 
-    df = df[df["Booking Status"] != "No Driver Found"]
+    df["timestamp"] = pd.to_datetime(df["date"] + " " + df["time"])
+    df.drop(["date", "time"], axis=1, inplace=True)
 
-    df["Is_Cancelled"] = df["Booking Status"].apply(
+    df = df[~df["booking_status"].isin(["No Driver Found", "Incomplete"])]
+    df["is_cancelled"] = df["booking_status"].apply(
         lambda x: 1 if "Cancelled" in x else 0
     )
 
-    df["Payment Method"] = df["Payment Method"].fillna("Unknown")
+    df["payment_method"] = df["payment_method"].fillna("Unknown")
 
     os.makedirs("data/processed", exist_ok=True)
     processed_path = "data/processed/ingested_data.parquet"
