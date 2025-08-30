@@ -207,3 +207,4 @@ documentation/
 models/
 mlartifacts/
 mlruns/
+*.pdf
