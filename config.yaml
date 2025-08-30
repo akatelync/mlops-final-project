@@ -27,8 +27,7 @@ mlflow:
   model_name: "uber-ride-prediction-model"
 
 thresholds:
-  min_accuracy: 0.0
-  min_f1_score: 0.0
+  min_accuracy: 0.7
 
 deployment:
   api_endpoint: "http://localhost:8000"
