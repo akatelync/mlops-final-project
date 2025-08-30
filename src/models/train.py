@@ -1,12 +1,10 @@
-import os
-
 import joblib
 import mlflow
 import mlflow.sklearn
 import pandas as pd
 import yaml
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
@@ -42,7 +40,6 @@ def train_model(
     X = train_data.drop(columns=[config["model"]["target_column"]])
     y = train_data[config["model"]["target_column"]]
 
-    # Split for evaluation
     test_size = config["model"].get("test_size", 0.2)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=config["model"]["random_state"]
@@ -59,7 +56,8 @@ def train_model(
 
     # Evaluate on test set
     y_pred = model_pipeline.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
 
     with mlflow.start_run():
@@ -73,17 +71,8 @@ def train_model(
             }
         )
 
-        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("precision", precision)
+        mlflow.log_metric("recall", recall)
         mlflow.log_metric("f1_score", f1)
 
-        mlflow.sklearn.log_model(model_pipeline, artifact_path="model")
-
-    os.makedirs("models", exist_ok=True)
-    model_path = "models/trained_model.pkl"
-    joblib.dump(model_pipeline, model_path)
-
-    print(f"Model trained. Test Accuracy: {acc:.4f}, F1 Score: {f1:.4f}")
-    print(f"Local pipeline saved to: {model_path}")
-    print("MLflow run logged.")
-
-    return model_path
+        mlflow.sklearn.log_model(model_pipeline, name="model")

@@ -2,8 +2,9 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
+
+from airflow import DAG
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

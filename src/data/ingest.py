@@ -4,13 +4,16 @@ import pandas as pd
 import yaml
 
 
-def load_config(config_path: str = "config.yaml") -> dict:
+def load_config(config_path: str = "/opt/airflow/config.yaml") -> dict:
     """Load configuration from YAML file."""
+    if not os.path.exists(config_path):
+        config_path = "config.yaml"
+
     with open(config_path) as file:
         return yaml.safe_load(file)
 
 
-def ingest_data(config_path: str = "config.yaml") -> str:
+def ingest_data(config_path: str = "/opt/airflow/config.yaml") -> str:
     """
     Load raw data and prepare for processing.
 
@@ -41,8 +44,3 @@ def ingest_data(config_path: str = "config.yaml") -> str:
     df.to_parquet(processed_path, index=False)
 
     return processed_path
-
-
-if __name__ == "__main__":
-    output_path = ingest_data()
-    print(f"Data ingested and saved to: {output_path}")
