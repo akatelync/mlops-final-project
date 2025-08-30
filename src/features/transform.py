@@ -14,33 +14,43 @@ def load_config(config_path: str = "/opt/airflow/config.yaml") -> dict:
 def transform_data(
     input_path: str = None,
     config_path: str = "/opt/airflow/config.yaml",
-) -> str:
+    input_df: pd.DataFrame = None,
+    for_inference: bool = False,
+) -> str | pd.DataFrame:
     """
-    Transform data for model training.
+    Transform data for model training or inference.
 
     Args:
-        input_path: Path to raw data (from config if None)
+        input_path: Path to raw data (from config if None, ignored if input_df provided)
         config_path: Path to configuration file
+        input_df: DataFrame to transform (for inference/single data point)
+        for_inference: If True, returns transformed DataFrame instead of saving files
 
     Returns:
-        str: Path to the transformed training data file
+        str: Path to the transformed training data file (training mode)
+        pd.DataFrame: Transformed DataFrame (inference mode)
     """
     config = load_config(config_path)
 
-    print(f"Config keys: {list(config.keys())}")
-    print(f"Full config: {config}")
+    if not for_inference:
+        print(f"Config keys: {list(config.keys())}")
+        print(f"Full config: {config}")
 
-    # Check if features exists before calling create_preprocessor
+    # Check if features exists before processing
     if "features" not in config:
         raise KeyError(
             f"'features' key missing from config. Available keys: {list(config.keys())}"
         )
 
-    if input_path is None:
-        input_path = config["data"]["ingested_path"]
+    # Load data - either from file or use provided DataFrame
+    if input_df is not None:
+        df = input_df.copy()
+    else:
+        if input_path is None:
+            input_path = config["data"]["ingested_path"]
+        df = pd.read_parquet(input_path)
 
-    df = pd.read_parquet(input_path)
-
+    # Apply datetime transformations
     if "datetime_cols" in config["features"]:
         for col in config["features"]["datetime_cols"]:
             if col in df.columns:
@@ -50,12 +60,13 @@ def transform_data(
                 df[f"{col}_month"] = df[col].dt.month
                 df = df.drop(columns=[col])
 
-                config["features"]["numerical_cols"].extend(
-                    [f"{col}_hour", f"{col}_day_of_week", f"{col}_month"]
-                )
+                # Only extend numerical_cols for training mode to avoid modifying config
+                if not for_inference:
+                    config["features"]["numerical_cols"].extend(
+                        [f"{col}_hour", f"{col}_day_of_week", f"{col}_month"]
+                    )
 
-    target_col = config["model"]["target_column"]
-
+    # Get feature columns
     feature_cols = [
         col
         for col in config["features"]["feature_cols"]
@@ -65,6 +76,13 @@ def transform_data(
     if "datetime_cols" in config["features"]:
         for col in config["features"]["datetime_cols"]:
             feature_cols.extend([f"{col}_hour", f"{col}_day_of_week", f"{col}_month"])
+
+    # For inference mode, just return the transformed features
+    if for_inference:
+        return df[feature_cols]
+
+    # Training mode - continue with train/test split and file saving
+    target_col = config["model"]["target_column"]
 
     X = df[feature_cols]
     y = df[target_col]

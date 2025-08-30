@@ -1,87 +1,294 @@
+from datetime import datetime
+from typing import Any
+
 import mlflow
 import mlflow.pyfunc
+import numpy as np
 import pandas as pd
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from src.features.transform import transform_data
 
 
-def load_config(config_path="config.yaml"):
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+def load_config(config_path: str = "config.yaml") -> dict:
+    """Load configuration from YAML file."""
+    try:
+        with open(config_path) as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        # Fallback for Docker environment
+        with open("/opt/airflow/config.yaml") as file:
+            return yaml.safe_load(file)
 
 
+# Load configuration
 config = load_config()
 
-MLFLOW_TRACKING_URI = config["mlflow"]["tracking_uri"]
-MODEL_NAME = config["mlflow"]["model_name"]
+# Set MLflow tracking URI
+mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
 
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-
-
-def load_champion_model():
-    """
-    Load the production ('champion') model from MLflow Model Registry
-    """
-    try:
-        model_uri = f"models:/{MODEL_NAME}/Production"
-        model = mlflow.pyfunc.load_model(model_uri)
-        return model
-    except Exception as e:
-        print(f"Error loading champion model: {e}")
-        return None
-
-
-model = load_champion_model()
-if model is None:
-    raise RuntimeError("Champion model could not be loaded from MLflow.")
-
+# Initialize FastAPI app
 app = FastAPI(
-    title="Uber Ride Cancellation Prediction",
-    description="Serve ML model for predicting ride cancellations",
+    title="Uber Ride Cancellation Prediction API",
+    description="API for serving ML model predictions for ride cancellation",
     version="1.0.0",
+    docs_url="/docs",
 )
 
 
-class PredictRequest(BaseModel):
-    # Replace these with your actual features
-    BookingID: int = Field(..., example=12345)
-    CustomerID: int = Field(..., example=54321)
-    VehicleType: str = Field(..., example="Sedan")
-    PaymentMethod: str = Field(..., example="Credit Card")
-    Distance: float = Field(..., example=10.5)
-    # Add more features based on your model
+class InputData(BaseModel):
+    """Input schema for prediction requests."""
+
+    avg_vtat: float = Field(
+        ..., description="Average vehicle turnaround time", example=15.5
+    )
+    timestamp: str = Field(
+        ..., description="Timestamp in ISO format", example="2023-01-01T12:00:00"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"avg_vtat": 15.5, "timestamp": "2023-01-01T12:00:00"}
+        }
+    }
 
 
-@app.get("/model")
-def get_model_info():
-    """Return model metadata"""
+def preprocess_input(data: dict[str, Any]) -> pd.DataFrame:
+    """
+    Preprocess input data using the same transformations as training pipeline.
+    Uses the transform_data function from transform.py to ensure consistency.
+
+    Args:
+        data: Dictionary containing input features
+
+    Returns:
+        pd.DataFrame: Preprocessed data ready for model prediction
+    """
+    df = pd.DataFrame([data])
+
+    # Use transform_data in inference mode to apply the same transformations
+    processed_df = transform_data(
+        input_df=df, config_path="config.yaml", for_inference=True
+    )
+
+    return processed_df
+
+
+def load_champion_model():
+    """Load the champion model from MLflow Model Registry."""
     try:
+        model_name = config["mlflow"]["model_name"]
+        model_uri = f"models:/{model_name}/Production"
+        model = mlflow.pyfunc.load_model(model_uri)
+        return model
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load champion model: {str(e)}"
+        )
+
+
+def get_model_metadata():
+    """Get model metadata from MLflow."""
+    try:
+        client = mlflow.tracking.MlflowClient()
+        model_name = config["mlflow"]["model_name"]
+
+        # Get the latest production version
+        versions = client.get_latest_versions(model_name, stages=["Production"])
+        if not versions:
+            raise HTTPException(
+                status_code=404,
+                detail="No production model found in MLflow Model Registry",
+            )
+
+        model_version = versions[0]
+        run = client.get_run(model_version.run_id)
+
         return {
-            "model_name": MODEL_NAME,
-            "stage": "Production",
-            "tracking_uri": MLFLOW_TRACKING_URI,
+            "model_version": model_version,
+            "run": run,
+            "params": run.data.params,
+            "metrics": run.data.metrics,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve model metadata: {str(e)}"
+        )
+
+
+def get_feature_importance(model, feature_names: list[str]) -> list[dict[str, Any]]:
+    """Extract feature importance from the model."""
+    try:
+        # Try to get feature importance from sklearn model
+        if hasattr(model, "_model_impl") and hasattr(model._model_impl, "coef_"):
+            # For logistic regression, use absolute coefficients as importance
+            importances = np.abs(model._model_impl.coef_[0])
+
+            # Create feature importance list
+            feature_importance = []
+            for i, importance in enumerate(importances):
+                if i < len(feature_names):
+                    feature_importance.append(
+                        {"feature": feature_names[i], "importance": float(importance)}
+                    )
+
+            # Sort by importance and return top 5
+            feature_importance.sort(key=lambda x: x["importance"], reverse=True)
+            return feature_importance[:5]
+
+        # Fallback: return empty list if feature importance not available
+        return []
+
+    except Exception as e:
+        print(f"Warning: Could not extract feature importance: {e}")
+        return []
 
 
 @app.post("/predict")
-def predict(payload: PredictRequest):
-    """Predict Is_Cancelled for incoming ride request"""
-    try:
-        # Convert payload to DataFrame
-        df = pd.DataFrame([payload.dict()])
+async def predict(input_data: InputData):
+    """
+    Make predictions using the champion model.
 
-        # Predict using champion model
-        prediction = model.predict(df)
-        proba = (
-            model.predict_proba(df)[:, 1] if hasattr(model, "predict_proba") else None
+    Args:
+        input_data: Input features for prediction
+
+    Returns:
+        Dict containing the prediction result
+    """
+    try:
+        # Load the champion model
+        model = load_champion_model()
+
+        # Preprocess the input data
+        processed_data = preprocess_input(input_data.model_dump())
+
+        # Make prediction
+        prediction = model.predict(processed_data)
+
+        # Get prediction probability if available
+        prediction_proba = None
+        if hasattr(model, "predict_proba"):
+            try:
+                proba = model.predict_proba(processed_data)
+                prediction_proba = float(proba[0][1])  # Probability of positive class
+            except (AttributeError, IndexError, ValueError, TypeError) as e:
+                print(f"Warning: Could not get prediction probability: {e}")
+                pass
+
+        response = {"prediction": int(prediction[0])}
+
+        if prediction_proba is not None:
+            response["probability"] = prediction_proba
+
+        return response
+
+    except ValidationError as ve:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid input data: {ve.errors()}"
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@app.get("/model")
+async def get_model_info():
+    """
+    Get information about the currently deployed model.
+
+    Returns:
+        Dict containing model hyperparameters, feature importance, and input schema
+    """
+    try:
+        # Get model metadata
+        metadata = get_model_metadata()
+
+        # Load model for feature importance
+        model = load_champion_model()
+
+        # Get expected feature names after preprocessing
+        expected_features = []
+        for col in config["features"]["feature_cols"]:
+            if col not in config["features"].get("datetime_cols", []):
+                expected_features.append(col)
+
+        # Add datetime-derived features
+        if "datetime_cols" in config["features"]:
+            for col in config["features"]["datetime_cols"]:
+                expected_features.extend(
+                    [f"{col}_hour", f"{col}_day_of_week", f"{col}_month"]
+                )
+
+        # Get feature importance
+        top_features = get_feature_importance(model, expected_features)
+
+        # Get input schema
+        input_schema = InputData.model_json_schema()
 
         return {
-            "prediction": int(prediction[0]),
-            "probability": float(proba[0]) if proba is not None else None,
+            "hyperparameters": metadata["params"],
+            "metrics": metadata["metrics"],
+            "top_features": top_features,
+            "input_schema": {
+                "properties": input_schema["properties"],
+                "required": input_schema["required"],
+                "type": input_schema["type"],
+            },
+            "model_info": {
+                "model_name": config["mlflow"]["model_name"],
+                "version": metadata["model_version"].version,
+                "stage": metadata["model_version"].current_stage,
+                "run_id": metadata["model_version"].run_id,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve model information: {str(e)}"
+        )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    try:
+        # Try to load the model to ensure it's accessible
+        load_champion_model()
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "model_loaded": True,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "model_loaded": False,
+            "error": str(e),
+        }
+
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "message": "Uber Ride Cancellation Prediction API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "endpoints": {
+            "predict": "/predict (POST)",
+            "model_info": "/model (GET)",
+            "health": "/health (GET)",
+        },
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

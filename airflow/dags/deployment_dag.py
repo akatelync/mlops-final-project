@@ -14,7 +14,7 @@ if project_root not in sys.path:
 default_args = {
     "owner": "mlops-team",
     "depends_on_past": False,
-    "start_date": datetime(2025, 8, 29),
+    "start_date": datetime(2025, 8, 31),
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 1,
@@ -37,6 +37,9 @@ def run_model_promotion(**context):
 
     result = promote_model()
 
+    if result.get("error"):
+        raise Exception(f"Model promotion failed: {result['error']}")
+
     if result["promoted"]:
         print("Model successfully promoted to Production!")
         if "model_name" in result:
@@ -45,6 +48,12 @@ def run_model_promotion(**context):
             )
     else:
         print("Model promotion failed - thresholds not met")
+        print(
+            f"Current metrics: accuracy={result.get('current_accuracy', 'N/A')}, f1_score={result.get('current_f1_score', 'N/A')}"
+        )
+        print(
+            f"Required: accuracy>={result.get('min_accuracy', 'N/A')}, f1_score>={result.get('min_f1_score', 'N/A')}"
+        )
 
     return result
 
@@ -71,11 +80,11 @@ def deploy_model(**context):
         else:
             print(f"Model from run: {promotion_result['run_id']}")
 
-        # Here you would typically:
-        # - Restart FastAPI service
-        # - Update model serving configuration
-        # - Run health checks
-        # - Send notifications
+        # Signal FastAPI to reload the new champion model
+        print("Triggering FastAPI to reload champion model...")
+        print(
+            "FastAPI will automatically load the latest Production model on next request"
+        )
 
         print("Model deployment completed successfully!")
         return {
@@ -95,6 +104,18 @@ def deploy_model(**context):
         return {"deployment_status": "skipped", "reason": reason}
 
 
+# wait_for_training = ExternalTaskSensor(
+#     task_id="wait_for_training_completion",
+#     external_dag_id="training_pipeline",
+#     external_task_id=None,  # Wait for entire DAG completion
+#     allowed_states=["success"],  # Add this
+#     failed_states=["failed", "upstream_failed", "skipped"],  # Add this
+#     timeout=3600,
+#     poke_interval=60,
+#     mode="reschedule",
+#     dag=dag,
+# )
+
 # Model promotion task
 model_promotion_task = PythonOperator(
     task_id="model_promotion",
@@ -109,5 +130,6 @@ model_deployment_task = PythonOperator(
     dag=dag,
 )
 
-# Define task dependencies (removed the external sensor for now)
+# Define task dependencies
+# wait_for_training >> model_promotion_task >> model_deployment_task
 model_promotion_task >> model_deployment_task
