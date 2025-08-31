@@ -208,3 +208,4 @@ models/
 mlartifacts/
 mlruns/
 *.pdf
+airflow/logs

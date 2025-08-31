@@ -20,8 +20,13 @@ from pydantic import ValidationError
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-# ruff: noqa: E402
-from src.serve.app import InputData, app, get_feature_importance, preprocess_input
+
+from src.serve.app import (  # ruff: noqa: E402
+    InputData,
+    app,
+    get_feature_importance,
+    preprocess_input,
+)
 
 
 @pytest.fixture
