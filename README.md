@@ -19,60 +19,67 @@ This project implements a complete MLOps solution that predicts whether an Uber 
 
 ```mermaid
 graph TB
-    %% Data Sources
-    DS[📊 Data Sources<br/>Kaggle Dataset] --> RAW[📁 Raw Data<br/>data/raw/dataset.csv]
+   %% Data Sources
+   DS[📊 Data Sources<br/>Kaggle Dataset] --> RAW[📁 Raw Data<br/>data/raw/dataset.csv]
 
-    %% Training Pipeline DAG
-    subgraph TP [🔄 Training Pipeline DAG - Daily]
-        RAW --> DI[📥 Data Ingestion<br/>src/data/ingest.py]
-        DI --> DT[🔧 Data Transformation<br/>src/features/transform.py]
-        DT --> MT[🤖 Model Training<br/>src/models/train.py]
-        MT --> MV[✅ Model Validation<br/>src/models/validate.py]
-    end
+   %% Data Storage
+   RAW --> PROC[📂 Processed Data<br/>data/processed/train_data.parquet]
+   RAW --> REF[📂 Reference Data<br/>data/reference/file]
+   PROC --> CURR[📂 Current Data<br/>data/current/drifted_data.parquet]
 
-    %% MLflow Integration
-    MV --> MLF[📈 MLflow Tracking<br/>Experiments & Metrics]
-    MLF --> MR[🏪 Model Registry<br/>Staging Models]
+   %% Training Pipeline DAG
+   subgraph TP [🔄 Training Pipeline DAG - Daily]
+      RAW --> DI[📥 Data Ingestion<br/>src/data/ingest.py]
+      DI --> DT[🔧 Data Transformation<br/>src/features/transform.py]
+      DT --> MT[🤖 Model Training<br/>src/models/train.py]
+      MT --> MV[✅ Model Validation<br/>src/models/validate.py]
+   end
 
-    %% Deployment Pipeline DAG
-    subgraph DP [🚀 Deployment Pipeline DAG - On Demand]
-        MR --> MP[🎯 Model Promotion<br/>src/deployment/promote.py]
-        MP --> MD[📦 Model Deployment<br/>Production Stage]
-    end
+   %% MLflow Integration
+   MV --> MLF[📈 MLflow Tracking<br/>Experiments & Metrics]
+   MLF --> MR[🏪 Model Registry<br/>Staging Models]
+   MLF --> ART[🗄️ Artifacts<br/>mlartifacts/, mlruns/]
 
-    %% Drift Detection Pipeline DAG
-    subgraph DD [🔍 Drift Detection DAG - Every 6 Hours]
-        SD[🎲 Simulate Drift<br/>src/data/simulate_drift.py]
-        SD --> DDT[📊 Detect Drift<br/>src/monitoring/generate_drift.py]
-        DDT --> AL[🚨 Alert on Drift<br/>Notifications]
-    end
+   %% Deployment Pipeline DAG
+   subgraph DP [🚀 Deployment Pipeline DAG - On Demand]
+      MR --> MP[🎯 Model Promotion<br/>src/deployment/promote.py]
+      MP --> MD[📦 Model Deployment<br/>Production Stage]
+   end
 
-    %% Current Data Flow
-    RAW -.-> SD
-    DDT --> MLF
+   %% Drift Detection Pipeline DAG
+   subgraph DD [🔍 Drift Detection DAG - Every 6 Hours]
+      CURR --> SD[🎲 Simulate Drift<br/>src/data/simulate_drift.py]
+      SD --> DDT[📊 Detect Drift<br/>src/monitoring/generate_drift.py]
+      DDT --> AL[🚨 Alert on Drift<br/>Notifications]
+      DDT --> ART
+   end
 
-    %% Model Serving
-    MD --> API[🌐 FastAPI Server<br/>src/serve/app.py]
-    API --> PRED[🔮 Predictions<br/>Real-time Inference]
+   %% Current Data Flow
+   RAW -.-> SD
+   DDT --> MLF
 
-    %% External Access
-    USER[👤 Users] --> API
-    AIRFLOW[⚙️ Airflow UI<br/>localhost:8080] -.-> TP
-    AIRFLOW -.-> DP
-    AIRFLOW -.-> DD
-    MLFLOW_UI[📊 MLflow UI<br/>localhost:5000] -.-> MLF
-    API_DOCS[📚 API Docs<br/>localhost:8000/docs] -.-> API
+   %% Model Serving
+   MD --> API[🌐 FastAPI Server<br/>src/serve/app.py]
+   API --> PRED[🔮 Predictions<br/>Real-time Inference]
 
-    %% Styling
-    classDef dagBox fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef mlflowBox fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef apiBox fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef dataBox fill:#fff3e0,stroke:#e65100,stroke-width:2px
+   %% External Access
+   USER[👤 Users] --> API
+   AIRFLOW[⚙️ Airflow UI<br/>localhost:8080] -.-> TP
+   AIRFLOW -.-> DP
+   AIRFLOW -.-> DD
+   MLFLOW_UI[📊 MLflow UI<br/>localhost:5000] -.-> MLF
+   API_DOCS[📚 API Docs<br/>localhost:8000/docs] -.-> API
 
-    class TP,DP,DD dagBox
-    class MLF,MR,MLFLOW_UI mlflowBox
-    class API,PRED,API_DOCS apiBox
-    class DS,RAW,SD dataBox
+   %% Styling
+   classDef dagBox fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+   classDef mlflowBox fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+   classDef apiBox fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+   classDef dataBox fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+   class TP,DP,DD dagBox
+   class MLF,MR,MLFLOW_UI,ART mlflowBox
+   class API,PRED,API_DOCS apiBox
+   class DS,RAW,SD,PROC,CURR,REF dataBox
 ```
 
 ### Component Overview
@@ -90,11 +97,8 @@ graph TB
 
 The project uses the [**Uber Ride Analytics**](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard) dataset from Kaggle, containing ride booking information with features such as:
 
-- **Booking Details**: Date, Time, Booking ID, Customer ID
-- **Ride Information**: Vehicle Type, Pickup/Drop Locations, Distance
-- **Performance Metrics**: VTAT (Vehicle Time to Arrival), CTAT (Customer Trip Time)
-- **Ratings**: Driver and Customer ratings
-- **Payment**: Payment methods and booking values
+- **Booking Details**: Date, Time, Booking ID
+- **Performance Metrics**: VTAT (Vehicle Time to Arrival)
 - **Target Variable**: `Is_Cancelled` (derived from Booking Status)
 
 ## 🚀 Quick Start
@@ -131,38 +135,30 @@ The project uses the [**Uber Ride Analytics**](https://www.kaggle.com/datasets/y
 
 ### Running the Pipeline
 
-#### Option 1: Local Development
 
-1. **Start MLflow server**
+To run the entire pipeline, use Docker Compose to start all services:
+
+1. **Build and start all services (Airflow, FastAPI, MLflow)**
    ```bash
-   mlflow server --host 127.0.0.1 --port 5000
+   docker-compose up -d
    ```
+   - Airflow UI: http://localhost:8080
+   - MLflow UI: http://localhost:5000
+   - FastAPI: http://localhost:8000
 
-2. **Start Airflow**
-   ```bash
-   airflow standalone
-   ```
-   Access Airflow UI at: http://localhost:8080
+2. **Trigger and monitor pipelines**
+   - Open Airflow UI and trigger the following DAGs as needed:
+     - `training_pipeline` (daily model training)
+     - `deployment_pipeline` (model promotion)
+     - `drift_monitoring_pipeline` (drift detection)
+   - Monitor DAG progress and logs in the Airflow UI.
 
-3. **Run training pipeline**
-   - Trigger the `training_pipeline` DAG in Airflow UI
-   - Monitor progress and logs
+3. **Access MLflow tracking and model registry**
+   - Open MLflow UI to view experiments, metrics, and model registry.
 
-4. **Deploy model**
-   - Trigger the `deployment_pipeline` DAG
-   - This promotes the best model to Production stage
-
-5. **Start API server**
-   ```bash
-   uvicorn src.serve.app:app --host 0.0.0.0 --port 8000
-   ```
-   Access API docs at: http://localhost:8000/docs
-
-#### Option 2: Docker Compose (Coming Soon)
-
-```bash
-docker-compose up -d
-```
+4. **Access FastAPI for model inference**
+   - Use the `/predict` endpoint for real-time predictions.
+   - API docs available at: http://localhost:8000/docs
 
 ## 📁 Project Structure
 
@@ -170,36 +166,50 @@ docker-compose up -d
 mlops-final-project/
 ├── src/                          # Source code
 │   ├── data/                     # Data processing modules
-│   │   ├── get_data.py          # Data acquisition
-│   │   ├── ingest.py            # Data ingestion
-│   │   └── simulate_drift.py    # Drift simulation
+│   │   ├── get_data.py           # Data acquisition
+│   │   ├── ingest.py             # Data ingestion
+│   │   └── simulate_drift.py     # Drift simulation
 │   ├── features/                 # Feature engineering
-│   │   └── transform.py         # Data preprocessing
+│   │   └── transform.py          # Data preprocessing
 │   ├── models/                   # Model training & validation
-│   │   ├── train.py             # Model training
-│   │   └── validate.py          # Model validation
+│   │   ├── train.py              # Model training
+│   │   └── validate.py           # Model validation
 │   ├── serve/                    # Model serving
-│   │   └── app.py               # FastAPI application
+│   │   └── app.py                # FastAPI application
 │   ├── monitoring/               # Monitoring & drift detection
-│   │   └── generate_drift.py    # Evidently AI reports
+│   │   └── generate_drift.py     # Evidently AI reports
 │   └── deployment/               # Model deployment
-│       └── promote.py           # Model promotion logic
-├── dags/                         # Airflow DAGs
-│   ├── training_dag.py          # Training pipeline
-│   ├── deployment_dag.py        # Deployment pipeline
-│   └── drift_dag.py             # Drift detection pipeline
+│       └── promote.py            # Model promotion logic
+├── airflow/
+│   ├── config/                   # Airflow configuration
+│   │   └── airflow.cfg
+│   ├── dags/                     # Airflow DAGs
+│   │   ├── training_dag.py       # Training pipeline
+│   │   ├── deployment_dag.py     # Deployment pipeline
+│   │   └── drift_dag.py          # Drift detection pipeline
+│   └── logs/                     # Airflow logs
 ├── data/                         # Data storage
-│   ├── raw/                     # Raw datasets
-│   ├── processed/               # Processed datasets
-│   └── current/                 # Current/drifted data
+│   ├── raw/                      # Raw datasets
+│   ├── processed/                # Processed datasets
+│   └── current/                  # Current/drifted data
+│   └── reference/                # Reference data for drift
+├── mlartifacts/                  # Model artifacts
+├── mlruns/                       # MLflow runs and models
+├── models/                       # Trained model files
+├── notebooks/                    # Jupyter notebooks (e.g., eda.ipynb)
+├── tests/                        # Unit tests (test_api.py, test_train.py, etc.)
 ├── docs/                         # Documentation
-│   ├── data_dictionary.md       # Dataset documentation
-│   └── drift_plan.md           # Drift detection strategy
-├── tests/                        # Unit tests
-├── notebooks/                    # Jupyter notebooks
-├── results/                      # Model outputs & reports
-├── config.yaml                   # Configuration file
-└── pyproject.toml               # Project dependencies
+│   ├── data_dictionary.md        # Dataset documentation
+│   └── drift_plan.md             # Drift detection strategy
+├── docker/
+│   ├── airflow.Dockerfile        # Airflow Dockerfile
+│   ├── fastapi.Dockerfile        # FastAPI Dockerfile
+│   └── mlflow.Dockerfile         # MLflow Dockerfile
+├── config.yaml                   # Main configuration file
+├── docker-compose.yaml           # Docker Compose setup
+├── pyproject.toml                # Project dependencies
+├── uv.lock                       # Python dependency lock file
+└── README.md                     # Project overview
 ```
 
 ## 🔄 Workflows
@@ -312,6 +322,8 @@ thresholds:
 Run the test suite:
 
 ```bash
+python tests/run_tests.py
+# Or use pytest directly
 pytest tests/ -v
 ```
 
@@ -365,9 +377,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
+
 For questions or issues:
 
 1. Check the [documentation](docs/)
+   - [Data Dictionary](docs/data_dictionary.md)
+   - [Drift Plan](docs/drift_plan.md)
 2. Search existing [issues](https://github.com/akatelync/mlops-final-project/issues)
 3. Create a new issue with detailed information
 

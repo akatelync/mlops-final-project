@@ -18,18 +18,14 @@ def load_config(config_path: str = "config.yaml") -> dict:
         with open(config_path) as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        # Fallback for Docker environment
         with open("/opt/airflow/config.yaml") as file:
             return yaml.safe_load(file)
 
 
-# Load configuration
 config = load_config()
 
-# Set MLflow tracking URI
 mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Uber Ride Cancellation Prediction API",
     description="API for serving ML model predictions for ride cancellation",
@@ -68,7 +64,6 @@ def preprocess_input(data: dict[str, Any]) -> pd.DataFrame:
     """
     df = pd.DataFrame([data])
 
-    # Use transform_data in inference mode to apply the same transformations
     processed_df = transform_data(
         input_df=df, config_path="config.yaml", for_inference=True
     )
@@ -95,7 +90,6 @@ def get_model_metadata():
         client = mlflow.tracking.MlflowClient()
         model_name = config["mlflow"]["model_name"]
 
-        # Get the latest production version
         versions = client.get_latest_versions(model_name, stages=["Production"])
         if not versions:
             raise HTTPException(
@@ -121,12 +115,9 @@ def get_model_metadata():
 def get_feature_importance(model, feature_names: list[str]) -> list[dict[str, Any]]:
     """Extract feature importance from the model."""
     try:
-        # Try to get feature importance from sklearn model
         if hasattr(model, "_model_impl") and hasattr(model._model_impl, "coef_"):
-            # For logistic regression, use absolute coefficients as importance
             importances = np.abs(model._model_impl.coef_[0])
 
-            # Create feature importance list
             feature_importance = []
             for i, importance in enumerate(importances):
                 if i < len(feature_names):
@@ -134,11 +125,9 @@ def get_feature_importance(model, feature_names: list[str]) -> list[dict[str, An
                         {"feature": feature_names[i], "importance": float(importance)}
                     )
 
-            # Sort by importance and return top 5
             feature_importance.sort(key=lambda x: x["importance"], reverse=True)
             return feature_importance[:5]
 
-        # Fallback: return empty list if feature importance not available
         return []
 
     except Exception as e:
@@ -158,21 +147,17 @@ async def predict(input_data: InputData):
         Dict containing the prediction result
     """
     try:
-        # Load the champion model
         model = load_champion_model()
 
-        # Preprocess the input data
         processed_data = preprocess_input(input_data.model_dump())
 
-        # Make prediction
         prediction = model.predict(processed_data)
 
-        # Get prediction probability if available
         prediction_proba = None
         if hasattr(model, "predict_proba"):
             try:
                 proba = model.predict_proba(processed_data)
-                prediction_proba = float(proba[0][1])  # Probability of positive class
+                prediction_proba = float(proba[0][1])
             except (AttributeError, IndexError, ValueError, TypeError) as e:
                 print(f"Warning: Could not get prediction probability: {e}")
                 pass
@@ -203,29 +188,23 @@ async def get_model_info():
         Dict containing model hyperparameters, feature importance, and input schema
     """
     try:
-        # Get model metadata
         metadata = get_model_metadata()
 
-        # Load model for feature importance
         model = load_champion_model()
 
-        # Get expected feature names after preprocessing
         expected_features = []
         for col in config["features"]["feature_cols"]:
             if col not in config["features"].get("datetime_cols", []):
                 expected_features.append(col)
 
-        # Add datetime-derived features
         if "datetime_cols" in config["features"]:
             for col in config["features"]["datetime_cols"]:
                 expected_features.extend(
                     [f"{col}_hour", f"{col}_day_of_week", f"{col}_month"]
                 )
 
-        # Get feature importance
         top_features = get_feature_importance(model, expected_features)
 
-        # Get input schema
         input_schema = InputData.model_json_schema()
 
         return {

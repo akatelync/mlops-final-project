@@ -36,13 +36,11 @@ def transform_data(
         print(f"Config keys: {list(config.keys())}")
         print(f"Full config: {config}")
 
-    # Check if features exists before processing
     if "features" not in config:
         raise KeyError(
             f"'features' key missing from config. Available keys: {list(config.keys())}"
         )
 
-    # Load data - either from file or use provided DataFrame
     if input_df is not None:
         df = input_df.copy()
     else:
@@ -50,7 +48,6 @@ def transform_data(
             input_path = config["data"]["ingested_path"]
         df = pd.read_parquet(input_path)
 
-    # Apply datetime transformations
     if "datetime_cols" in config["features"]:
         for col in config["features"]["datetime_cols"]:
             if col in df.columns:
@@ -60,13 +57,11 @@ def transform_data(
                 df[f"{col}_month"] = df[col].dt.month
                 df = df.drop(columns=[col])
 
-                # Only extend numerical_cols for training mode to avoid modifying config
                 if not for_inference:
                     config["features"]["numerical_cols"].extend(
                         [f"{col}_hour", f"{col}_day_of_week", f"{col}_month"]
                     )
 
-    # Get feature columns
     feature_cols = [
         col
         for col in config["features"]["feature_cols"]
@@ -77,11 +72,9 @@ def transform_data(
         for col in config["features"]["datetime_cols"]:
             feature_cols.extend([f"{col}_hour", f"{col}_day_of_week", f"{col}_month"])
 
-    # For inference mode, just return the transformed features
     if for_inference:
         return df[feature_cols]
 
-    # Training mode - continue with train/test split and file saving
     target_col = config["model"]["target_column"]
 
     X = df[feature_cols]

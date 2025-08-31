@@ -57,7 +57,6 @@ def train_model(
     recall = recall_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
 
-    # Start a new MLflow run
     with mlflow.start_run() as run:
         run_id = run.info.run_id
 
